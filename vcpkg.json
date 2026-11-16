@@ -1,0 +1,8 @@
+{
+  "name": "debugng",
+  "version-string": "1.1.1",
+  "dependencies": [
+    "commonlibsse-ng",
+    "spdlog"
+  ]
+}
