@@ -1,8 +1,11 @@
 {
   "name": "debugng",
-  "version-string": "1.1.1",
+  "version-string": "1.1.3",
   "dependencies": [
-    "commonlibsse-ng",
-    "spdlog"
+    "spdlog",
+    "fmt",
+    "rapidcsv",
+    "directxtk",
+    "directxmath"
   ]
 }

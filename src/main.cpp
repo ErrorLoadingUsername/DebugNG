@@ -66,6 +66,8 @@ namespace
 				dbg::g_enabled = value != 0;
 			} else if (key == "playerOnly") {
 				dbg::g_playerOnly = value != 0;
+			} else if (key == "playerStateInactiveEffects") {
+				dbg::g_stateInactiveEffects = value != 0;
 			} else if (key == "english") {
 				dbg::g_english = value != 0;
 			} else if (key == "hitchMs") {
@@ -98,12 +100,11 @@ namespace
 	double            g_avgMs = 0.0;          // rolling average frame time
 	Clock::time_point g_lastStackDump{};      // stack dumps at most every 2 s
 
-	// The enabled-controls flags of RE::ControlMap. CommonLibSSE-NG puts them at +0x118;
-	// on 1.6.1130+ they are at +0x120 (verified on 1.6.1170 with dpc/epc).
+	// The enabled-controls flags of RE::ControlMap. CommonLib knows where they are on every runtime
+	// (+0x118 SE / AE before 1.6.1130, +0x120 from 1.6.1130 on, +0x138 VR).
 	std::uint32_t EnabledControls(const RE::ControlMap* a_map)
 	{
-		static const std::ptrdiff_t offset = REL::Module::get().version() >= REL::Version{ 1, 6, 1130, 0 } ? 0x120 : 0x118;
-		return *reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const std::byte*>(a_map) + offset);
+		return a_map->GetRuntimeData().enabledControls.underlying();
 	}
 
 	// The input context stack of RE::ControlMap (gameplay, menu mode, TFC ...). On 1.6.1130+ the
@@ -112,20 +113,27 @@ namespace
 	// A context left on the stack by a mod blocks events like "Ready Weapon" or "Toggle POV".
 	std::string InputContexts(const RE::ControlMap* a_map)
 	{
-		static const std::ptrdiff_t offset = REL::Module::get().version() >= REL::Version{ 1, 6, 1130, 0 } ? 0x108 : 0x100;
-		const auto* base = reinterpret_cast<const std::byte*>(a_map) + offset;
-		const auto* data = *reinterpret_cast<const std::uint32_t* const*>(base);
-		const auto  size = *reinterpret_cast<const std::uint32_t*>(base + 0x10);
-		if (!data || size > 64) {
+		// CommonLib knows where the stack is on every runtime (+0x100 SE, +0x108 from 1.6.1130 on, +0x120 VR)
+		const auto& stack = a_map->GetRuntimeData().contextPriorityStack;
+		const auto  size  = stack.size();
+		if (size > 64) {
 			return fmt::format("(unreadable: size {})", size);
 		}
+		// 1.6.1130+ has one more context (marketplace) before "favor"
+		static const bool marketplace = REL::Module::IsAE() && REL::Module::get().version() >= REL::Version{ 1, 6, 1130, 0 };
 		static constexpr const char* kNames[] = { "gameplay", "menu mode", "console", "item menu", "inventory",
 			"debug text", "favorites", "map", "stats", "cursor", "book", "debug overlay", "journal", "TFC mode",
 			"map debug", "lockpicking", "favor" };
 		std::string out;
 		for (std::uint32_t i = 0; i < size; ++i) {
-			const auto id = data[i];
-			out += fmt::format("{}{}({})", out.empty() ? "" : " > ", id < std::size(kNames) ? kNames[id] : "?", id);
+			const auto  id   = static_cast<std::uint32_t>(stack[i]);
+			const char* name = "?";
+			if (marketplace && id == 16) {
+				name = "marketplace";
+			} else if (const auto n = marketplace && id > 16 ? id - 1 : id; n < std::size(kNames)) {
+				name = kNames[n];
+			}
+			out += fmt::format("{}{}({})", out.empty() ? "" : " > ", name, id);
 		}
 		return fmt::format("{} context(s): {}", size, out.empty() ? "-"s : out);
 	}
@@ -221,6 +229,7 @@ namespace
 			dbg::g_worstHitchMs = (std::max)(dbg::g_worstHitchMs.load(), static_cast<int>(ms));
 			dbg::LogWarn(dbg::kHitch, fmt::format("HITCH {:.0f} ms (average {:.0f} ms)", ms, avg));
 			dbg::DumpAttachStats(true);  // which plugins' references were attached in this frame
+			dbg::DumpActorStats();       // how many actors the AI / pathfinding had to handle
 			if (now - g_lastStackDump >= 2s) {
 				g_lastStackDump = now;
 				dbg::DumpStacks("now", dbg::g_stackLines);
@@ -297,11 +306,19 @@ namespace dbg
 		if (!player) {
 			return;
 		}
-		auto put = [](const std::string& a_text) {
-			g_lines++;
-			SKSE::log::warn("[{:<10}] {}", kCats[kControls].key, a_text);
-		};
-		put(fmt::format("---------- PLAYER STATE ({}) ----------", a_reason));
+		// everything goes into its own file DebugNG-Player_<yyyy-mm-dd_hh-mm-ss>.log next to DebugNG.log,
+		// complete (all effects, all scripts); DebugNG.log only gets one line pointing to it
+		std::vector<std::string> lines;
+		auto put = [&lines](const std::string& a_text) { lines.push_back(a_text); };
+		const auto now = std::time(nullptr);
+		std::tm    tm{};
+		localtime_s(&tm, &now);
+		char stamp[32]{};
+		std::strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H-%M-%S", &tm);
+		char when[32]{};
+		std::strftime(when, sizeof(when), "%d.%m.%Y %H:%M:%S", &tm);
+		put(fmt::format("DebugNG player state ({}) - {} - Skyrim {}", a_reason, when, REL::Module::get().version().string(".")));
+		put("");
 
 		if (auto map = RE::ControlMap::GetSingleton()) {
 			put(fmt::format("  controls disabled: {}  (flags {:08X})", DisabledControls(map), EnabledControls(map)));
@@ -336,21 +353,61 @@ namespace dbg
 		// active effects (Defeat / DA / bondage mods lock the player through effects too)
 		if (auto target = player->AsMagicTarget()) {
 			if (auto list = target->GetActiveEffectList()) {
-				int n = 0;
+				std::vector<std::string> active, inactive;
 				for (auto* effect : *list) {
 					if (!effect) {
 						continue;
 					}
-					const bool inactive = effect->flags.any(RE::ActiveEffect::Flag::kInactive);
-					put(fmt::format("  effect{} {}  from {}", inactive ? " (inactive)" : "", Form(effect->GetBaseObject()), Form(effect->spell)));
-					if (++n >= 80) {
-						put("  ... more effects");
-						break;
+					const auto text = fmt::format("    {}  from {}", Form(effect->GetBaseObject()), Form(effect->spell));
+					(effect->flags.any(RE::ActiveEffect::Flag::kInactive) ? inactive : active).push_back(text);
+				}
+				put(fmt::format("  active effects: {}", active.size()));
+				for (const auto& e : active) {
+					put(e);
+				}
+				if (g_stateInactiveEffects) {
+					put(fmt::format("  inactive effects: {}", inactive.size()));
+					for (const auto& e : inactive) {
+						put(e);
 					}
+				} else {
+					put(fmt::format("  inactive effects: {} (not listed - see playerStateInactiveEffects)", inactive.size()));
 				}
 			}
 		}
-		DumpStacks("player state", 40);
+		put("");
+		for (const auto& l : StackLines("player state", 0)) {
+			put(l);
+		}
+
+		const auto name = fmt::format("DebugNG-Player_{}.log", stamp);
+		const auto dir  = g_logPath.parent_path();
+		{
+			std::ofstream file(dir / name, std::ios::trunc);
+			for (const auto& l : lines) {
+				file << l << "\n";
+			}
+		}
+		LogWarn(kControls, fmt::format("player state ({}) written to {}", a_reason, name));
+
+		// keep the 20 newest player state files
+		std::error_code ec;
+		std::vector<std::filesystem::directory_entry> files;
+		for (const auto& f : std::filesystem::directory_iterator(dir, ec)) {
+			const auto fn = f.path().filename().string();
+			if (fn.rfind("DebugNG-Player_", 0) == 0 && f.path().extension() == ".log") {
+				files.push_back(f);
+			}
+		}
+		if (files.size() > 20) {
+			std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+				std::error_code e1, e2;
+				return a.last_write_time(e1) > b.last_write_time(e2);
+			});
+			for (std::size_t i = 20; i < files.size(); ++i) {
+				std::filesystem::remove(files[i].path(), ec);
+			}
+		}
 	}
 
 	// Undo everything mods typically use to take control away from the player
@@ -396,7 +453,7 @@ namespace dbg
 		// camera stuck in a scene / furniture / free state: back to third person
 		staticCall("Game", "ForceThirdPerson", RE::MakeFunctionArguments());
 
-		RE::DebugNotification(L("DebugNG: Steuerung zurueckgegeben", "DebugNG: controls restored"));
+		RE::SendHUDMessage::ShowHUDMessage(L("DebugNG: Steuerung zurueckgegeben", "DebugNG: controls restored"));
 	}
 
 	std::string LogPath() { return g_logPath.string(); }
@@ -416,6 +473,8 @@ namespace dbg
 			 << "enabled=" << int(g_enabled.load()) << "\n"
 			 << "; actor events (combat, equip, hits ...) only when the player is involved\n"
 			 << "playerOnly=" << int(g_playerOnly.load()) << "\n"
+			 << "; \"Save player state\": also list inactive effects (long); 0 = only count them\n"
+			 << "playerStateInactiveEffects=" << int(g_stateInactiveEffects.load()) << "\n"
 			 << "; language of the menu page: 0 = German, 1 = English\n"
 			 << "english=" << int(g_english.load()) << "\n"
 			 << "; how much is written: 0 = errors only, 1 = important (hitches with Papyrus stacks,\n"
@@ -441,11 +500,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	g_iniPath = FindLogDir() / "DebugNG.ini";
 	LoadSettings();
 	dbg::SaveSettings();  // create / rewrite with all keys and comments (keeps the loaded values)
-	SKSE::log::info("DebugNG 1.1.1 - {}", REL::Module::get().version().string("."));
+	SKSE::log::info("DebugNG 1.1.3 (beta) - {}", REL::Module::get().version().string("."));
 	SKSE::log::info("log: {}   settings: {}", g_logPath.string(), g_iniPath.string());
 	if (REL::Module::IsVR()) {
-		SKSE::log::error("Skyrim VR is not supported");
-		return true;
+		SKSE::log::warn("Skyrim VR: not tested yet - please report whether DebugNG works");
 	}
 
 	SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {

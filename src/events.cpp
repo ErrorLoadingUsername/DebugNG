@@ -84,6 +84,44 @@ namespace dbg
 		g_attachTotal = 0;
 	}
 
+	// Which actors the AI/pathfinding has to handle right now. A hitch where the main thread waits
+	// for other threads (AI, pathing) scales with the number of high-process actors that are
+	// moving - e.g. a whole town fleeing from a fight.
+	void DumpActorStats()
+	{
+		auto lists = RE::ProcessLists::GetSingleton();
+		if (!lists) {
+			return;
+		}
+		std::uint32_t high = 0, combat = 0, running = 0, moving = 0;
+		std::unordered_map<std::string, std::uint32_t> byFile;  // plugin of the actor's base NPC
+		for (auto& handle : lists->highActorHandles) {
+			auto actor = handle.get();
+			if (!actor || actor->IsDead()) {
+				continue;
+			}
+			++high;
+			const bool fight = actor->IsInCombat();
+			const bool run   = actor->IsRunning() || actor->AsActorState()->IsSprinting();
+			combat += fight;
+			running += run;
+			const auto& st = actor->AsActorState()->actorState1;
+			moving += (st.movingForward || st.movingBack || st.movingLeft || st.movingRight) ? 1u : 0u;
+			if (fight || run) {
+				byFile[FileOf(actor->GetActorBase(), 0)]++;
+			}
+		}
+		std::vector<std::pair<std::string, std::uint32_t>> v(byFile.begin(), byFile.end());
+		std::sort(v.begin(), v.end(), [](auto& a, auto& b) { return a.second > b.second; });
+		std::string top;
+		for (std::size_t i = 0; i < v.size() && i < 6; ++i) {
+			top += fmt::format("{}{} {}", top.empty() ? "" : ", ", v[i].first, v[i].second);
+		}
+		LogWarn(kHitch, fmt::format("  actors: {} high process ({} in combat, {} running, {} moving), {} middle-high, {} middle-low, {} low{}",
+			high, combat, running, moving, lists->middleHighActorHandles.size(), lists->middleLowActorHandles.size(),
+			lists->lowActorHandles.size(), top.empty() ? "" : " - combat/running by plugin: " + top));
+	}
+
 	bool IsPlayer(const RE::TESObjectREFR* a_ref)
 	{
 		return a_ref && a_ref == RE::PlayerCharacter::GetSingleton();
@@ -201,8 +239,8 @@ namespace dbg
 			}
 		});
 		ListenScript<RE::TESSpellCastEvent>([](const RE::TESSpellCastEvent& e) {
-			if (On(kMagic) && Wanted(e.object)) {
-				Log(kMagic, fmt::format("{} casts {}", Ref(e.object), Form(RE::TESForm::LookupByID(e.spell))));
+			if (On(kMagic) && Wanted(e.object.get())) {
+				Log(kMagic, fmt::format("{} casts {}", Ref(e.object.get()), Form(RE::TESForm::LookupByID(e.spell))));
 			}
 		});
 		ListenScript<RE::TESActiveEffectApplyRemoveEvent>([](const RE::TESActiveEffectApplyRemoveEvent& e) {
@@ -267,10 +305,10 @@ namespace dbg
 		});
 		ListenScript<RE::TESCellAttachDetachEvent>([](const RE::TESCellAttachDetachEvent& e) {
 			if (On(kObjectLoad)) {
-				Log(kObjectLoad, fmt::format("{} {}", e.attached ? "attached" : "detached", RefDetail(e.reference)));
+				Log(kObjectLoad, fmt::format("{} {}", e.attached ? "attached" : "detached", RefDetail(e.reference.get())));
 				if (e.attached && e.reference) {
 					std::scoped_lock l(g_attachLock);
-					g_attachByFile[FileOf(e.reference, 0)]++;
+					g_attachByFile[FileOf(e.reference.get(), 0)]++;
 					g_attachTotal++;
 				}
 			}

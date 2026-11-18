@@ -157,12 +157,15 @@ namespace
 			"Takes effect after closing the menu."));
 
 		SeparatorText(L("Diagnose", "Diagnostics"));
-		if (Button(L("Spielerzustand ins Log", "Player state to the log"))) {
+		if (Button(L("Spielerzustand speichern", "Save player state"))) {
 			RunOnGameThread([] { dbg::DumpPlayerState("manual"); });
 		}
-		TextWrapped("%s", L("Schreibt Steuerungssperren, Eingabe-Kontexte, Kamera, Animations-Zustand, aktive Effekte und laufende Skripte ins Log "
+		Toggle(L("Auch inaktive Effekte auflisten (lang)", "Also list inactive effects (long)"), dbg::g_stateInactiveEffects);
+		TextWrapped("%s", L("Schreibt Steuerungssperren, Eingabe-Kontexte, Kamera, Animations-Zustand, alle Effekte und alle laufenden Skripte "
+							"in eine eigene Datei DebugNG-Player_<JJJJ-MM-TT_hh-mm-ss>.log neben DebugNG.log (die 20 neuesten bleiben) "
 							"- damit sieht man, was blockiert, wenn \"Steuerung zurueckgeben\" nicht hilft.",
-			"Writes control locks, input contexts, camera, animation state, active effects and running scripts to the log "
+			"Writes control locks, input contexts, camera, animation state, all effects and all running scripts to its own file "
+			"DebugNG-Player_<yyyy-mm-dd_hh-mm-ss>.log next to DebugNG.log (the 20 newest are kept) "
 			"- shows what is blocking when \"Give controls back\" does not help."));
 	}
 }

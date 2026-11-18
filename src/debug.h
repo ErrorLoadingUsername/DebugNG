@@ -82,7 +82,8 @@ namespace dbg
 	inline std::atomic<bool> g_cat[kCount]{};
 	inline std::atomic<bool> g_enabled{ true };
 	inline std::atomic<bool> g_playerOnly{ true };  // actor events: only those involving the player
-	inline std::atomic<bool> g_english{ false };
+	inline std::atomic<bool> g_english{ true };
+	inline std::atomic<bool> g_stateInactiveEffects{ false };  // player state file: also list inactive effects
 	inline std::atomic<int>  g_hitchMs{ 40 };       // frames slower than this are logged
 	inline std::atomic<int>  g_stackLines{ 15 };    // Papyrus stacks listed per hitch
 
@@ -128,6 +129,7 @@ namespace dbg
 	bool        IsPlayer(const RE::TESObjectREFR* a_ref);
 	std::string RefDetail(const RE::TESObjectREFR* a_ref);  // + base object type/name and plugins
 	void        DumpAttachStats(bool a_log);                // refs attached since the last frame, by plugin
+	void        DumpActorStats();                           // loaded actors by AI process level / activity, at a hitch
 	void        RegisterEvents();
 	void        DumpLoadOrder();
 	void        DumpSksePlugins();
@@ -137,6 +139,7 @@ namespace dbg
 	void        PollModEvents();
 	std::size_t RunningStackCount();
 	void        DumpStacks(const char* a_reason, int a_max);
+	std::vector<std::string> StackLines(const char* a_reason, int a_max);  // 0 = all
 
 	// ui.cpp
 	void RegisterMenu();

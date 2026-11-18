@@ -23,7 +23,7 @@ namespace
 	};
 	static_assert(sizeof(Entry) == 0x10);
 
-	struct StorageLayout
+	struct SkseStorageLayout
 	{
 		void*        vtbl;       // 00
 		std::byte    lock[40];   // 08 ICriticalSection
@@ -34,10 +34,10 @@ namespace
 		std::size_t* freeEnd;    // 50
 		std::size_t* freeCap;    // 58
 	};
-	static_assert(offsetof(StorageLayout, begin) == 0x30);
-	static_assert(offsetof(StorageLayout, freeBegin) == 0x48);
+	static_assert(offsetof(SkseStorageLayout, begin) == 0x30);
+	static_assert(offsetof(SkseStorageLayout, freeBegin) == 0x48);
 
-	StorageLayout* g_storage = nullptr;
+	SkseStorageLayout* g_storage = nullptr;
 
 	void Append(char* a_buf, std::size_t a_len, std::size_t& a_pos, const char* a_text)
 	{
@@ -130,7 +130,7 @@ namespace
 
 		// 4) the static instance: an object in .data whose first qword is that vtable
 		std::uintptr_t found = 0;
-		for (std::size_t i = 0; i + sizeof(StorageLayout) <= dataSize; i += 8) {
+		for (std::size_t i = 0; i + sizeof(SkseStorageLayout) <= dataSize; i += 8) {
 			if (*reinterpret_cast<const std::uintptr_t*>(data + i) == vtbl) {
 				++a_candidates;
 				if (!found) {
@@ -222,7 +222,7 @@ namespace dbg
 			Log(kModEventStore, "SKSEPersistentObjectStorage not found - ModEvent tracking off");
 			return false;
 		}
-		g_storage = reinterpret_cast<StorageLayout*>(address);
+		g_storage = reinterpret_cast<SkseStorageLayout*>(address);
 		Log(kModEventStore, fmt::format("SKSE object storage at +{:X}", address - base));
 		return true;
 	}
@@ -306,11 +306,12 @@ namespace dbg
 		return total;
 	}
 
-	void DumpStacks(const char* a_reason, int a_max)
+	std::vector<std::string> StackLines(const char* a_reason, int a_max)
 	{
+		std::vector<std::string> out;
 		auto vm = VM();
 		if (!vm) {
-			return;
+			return out;
 		}
 		constexpr std::size_t kMax = 64;
 		void*                 stacks[kMax];
@@ -338,14 +339,22 @@ namespace dbg
 			}
 		}
 		std::sort(order.begin(), order.end(), [&](const auto& a, const auto& b) { return count[a] > count[b]; });
-		LogWarn(kHitch, fmt::format("  Papyrus ({}): {} running stack(s), {} with script frames", a_reason, total, lines.size()));
+		out.push_back(fmt::format("  Papyrus ({}): {} running stack(s), {} with script frames", a_reason, total, lines.size()));
 		int shown = 0;
 		for (const auto& key : order) {
-			if (shown++ >= a_max) {
-				LogWarn(kHitch, fmt::format("    ... {} more", order.size() - a_max));
+			if (a_max > 0 && shown++ >= a_max) {
+				out.push_back(fmt::format("    ... {} more", order.size() - a_max));
 				break;
 			}
-			LogWarn(kHitch, fmt::format("    {:>3}x  {}", count[key], key));
+			out.push_back(fmt::format("    {:>3}x  {}", count[key], key));
+		}
+		return out;
+	}
+
+	void DumpStacks(const char* a_reason, int a_max)
+	{
+		for (const auto& line : StackLines(a_reason, a_max)) {
+			LogWarn(kHitch, line);
 		}
 	}
 }
