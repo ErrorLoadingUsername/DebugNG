@@ -32,6 +32,17 @@ namespace
 		return std::filesystem::current_path(ec) / "Data" / "SKSE" / "Plugins";
 	}
 
+	// Path for the log without the user's own folder names (e.g. the Windows user name):
+	// "X:\\...\\My Games\\Skyrim Special Edition\\SKSE\\file" -> "Documents\\My Games\\...\\file"
+	std::string AnonPath(const std::filesystem::path& a_path)
+	{
+		const auto text = a_path.string();
+		if (const auto pos = text.find("\\My Games\\"); pos != std::string::npos) {
+			return "Documents" + text.substr(pos);
+		}
+		return a_path.filename().string();
+	}
+
 	void SetupLog()
 	{
 		g_logPath = FindLogDir() / "DebugNG.log";
@@ -500,8 +511,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	g_iniPath = FindLogDir() / "DebugNG.ini";
 	LoadSettings();
 	dbg::SaveSettings();  // create / rewrite with all keys and comments (keeps the loaded values)
-	SKSE::log::info("DebugNG 1.1.3 (beta) - {}", REL::Module::get().version().string("."));
-	SKSE::log::info("log: {}   settings: {}", g_logPath.string(), g_iniPath.string());
+	SKSE::log::info("DebugNG 1.1.4 - {}", REL::Module::get().version().string("."));
+	SKSE::log::info("log: {}   settings: {}", AnonPath(g_logPath), AnonPath(g_iniPath));
 	if (REL::Module::IsVR()) {
 		SKSE::log::warn("Skyrim VR: not tested yet - please report whether DebugNG works");
 	}

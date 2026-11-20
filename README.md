@@ -36,7 +36,7 @@ Settings: `Documents\My Games\Skyrim Special Edition\SKSE\DebugNG.ini` (created 
 - Address Library for SKSE Plugins
 - SKSE Menu Framework (optional, in-game menu)
 
-Skyrim SE 1.5.97 and AE 1.6.x. Not Skyrim VR.
+Skyrim SE 1.5.97, AE 1.6.x and 1.7.104 (SKSE 2.3.x, Address Library for 1.7). Skyrim VR: not tested.
 
 ## Building
 
