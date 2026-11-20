@@ -514,7 +514,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::log::info("DebugNG 1.1.4 - {}", REL::Module::get().version().string("."));
 	SKSE::log::info("log: {}   settings: {}", AnonPath(g_logPath), AnonPath(g_iniPath));
 	if (REL::Module::IsVR()) {
-		SKSE::log::warn("Skyrim VR: not tested yet - please report whether DebugNG works");
+		SKSE::log::info("running on Skyrim VR");
 	}
 
 	SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
