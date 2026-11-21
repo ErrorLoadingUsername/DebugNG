@@ -454,8 +454,13 @@ namespace dbg
 			}
 		}
 
-		// (no ControlMap::ToggleControls here: on 1.6.1170 CommonLib's enabledControls
-		//  offset does not match - it would write into the wrong field)
+		// Locks set directly in the ControlMap by SKSE plugins (e.g. a dialogue camera that disables the POV switch
+		// and does not enable it again) are not lifted by Game.EnablePlayerControls - lift them with the game's own
+		// ControlMap::ToggleControls (Address Library, no field offsets of our own).
+		if (auto map = RE::ControlMap::GetSingleton()) {
+			map->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kAll, true, false);
+			LogWarn(kControls, fmt::format("ControlMap: all controls enabled - disabled now: {}", DisabledControls(map)));
+		}
 		player->SetAIDriven(false);
 		player->EnableAI(true);
 
@@ -511,7 +516,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	g_iniPath = FindLogDir() / "DebugNG.ini";
 	LoadSettings();
 	dbg::SaveSettings();  // create / rewrite with all keys and comments (keeps the loaded values)
-	SKSE::log::info("DebugNG 1.1.4 - {}", REL::Module::get().version().string("."));
+	SKSE::log::info("DebugNG {} - {}", SKSE::PluginDeclaration::GetSingleton()->GetVersion().string("."), REL::Module::get().version().string("."));
 	SKSE::log::info("log: {}   settings: {}", AnonPath(g_logPath), AnonPath(g_iniPath));
 	if (REL::Module::IsVR()) {
 		SKSE::log::info("running on Skyrim VR");

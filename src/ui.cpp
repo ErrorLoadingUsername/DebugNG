@@ -148,11 +148,11 @@ namespace
 		if (Button(L("Steuerung zurueckgeben", "Give controls back"))) {
 			RunOnGameThread([] { dbg::ResetPlayerControls(); });
 		}
-		TextWrapped("%s", L("Hebt Steuerungssperren, KI-Steuerung, Charaktererstellungs-Modus, Fesselung und Bewegungssperre auf, "
+		TextWrapped("%s", L("Hebt Steuerungssperren (auch die, die SKSE-Plugins direkt setzen, z. B. Kamerawechsel), KI-Steuerung, Charaktererstellungs-Modus, Fesselung und Bewegungssperre auf, "
 							"setzt eine haengende Animation zurueck und holt die Kamera in die Third-Person-Ansicht "
 							"- fuer den Fall, dass eine Mod (z. B. nach einer Niederlage) die Kontrolle nicht zurueckgibt. "
 							"Wirkt nach dem Schliessen des Menues.",
-			"Lifts disabled controls, AI-driven mode, char-gen mode, restrained and don't-move states, resets a stuck animation "
+			"Lifts disabled controls (also those SKSE plugins set directly, e.g. the POV switch), AI-driven mode, char-gen mode, restrained and don't-move states, resets a stuck animation "
 			"state and puts the camera back to third person - for when a mod (e.g. after a defeat) does not give control back. "
 			"Takes effect after closing the menu."));
 
